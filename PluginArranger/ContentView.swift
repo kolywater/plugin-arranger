@@ -179,14 +179,28 @@ class PluginManager: ObservableObject {
                 if parts.count == 2 {
                     let plugin = String(parts[0])
                     let track = String(parts[1])
-                    let position = getWindowPosition(window)
-                    pluginWindows.append(PluginWindow(
-                        plugin: plugin,
-                        track: track,
-                        windowElement: window,
-                        originalPosition: position,
-                        isHidden: false
-                    ))
+
+                    // Check if this window is already being tracked
+                    if let existing = scanResult.pluginWindows.first(where: { $0.plugin == plugin && $0.track == track }) {
+                        // Preserve original position and hidden state
+                        pluginWindows.append(PluginWindow(
+                            plugin: plugin,
+                            track: track,
+                            windowElement: window,
+                            originalPosition: existing.originalPosition,
+                            isHidden: existing.isHidden
+                        ))
+                    } else {
+                        // New window - capture current position
+                        let position = getWindowPosition(window)
+                        pluginWindows.append(PluginWindow(
+                            plugin: plugin,
+                            track: track,
+                            windowElement: window,
+                            originalPosition: position,
+                            isHidden: false
+                        ))
+                    }
                 }
             }
         }
@@ -283,9 +297,10 @@ class PluginManager: ObservableObject {
         let topY = screen.frame.height - frame.maxY
         let bottomY = screen.frame.height - frame.minY
 
-        let visibleIndices = scanResult.pluginWindows.indices.filter {
-            !scanResult.pluginWindows[$0].isHidden
-        }
+        // Get visible windows sorted by plugin name
+        let visibleIndices = scanResult.pluginWindows.indices
+            .filter { !scanResult.pluginWindows[$0].isHidden }
+            .sorted { scanResult.pluginWindows[$0].plugin < scanResult.pluginWindows[$1].plugin }
 
         var windowSizes: [(index: Int, size: CGSize)] = []
         for windowIndex in visibleIndices {
@@ -331,86 +346,102 @@ class PluginManager: ObservableObject {
     }
 }
 
+// MARK: - FlowLayout
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = arrange(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrange(proposal: proposal, subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
+        }
+    }
+
+    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+
+            if currentX + size.width > maxWidth && currentX > 0 {
+                currentX = 0
+                currentY += rowHeight + spacing
+                rowHeight = 0
+            }
+
+            positions.append(CGPoint(x: currentX, y: currentY))
+            currentX += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        let totalHeight = currentY + rowHeight
+        return (CGSize(width: maxWidth, height: totalHeight), positions)
+    }
+}
+
 // MARK: - ContentView
 
 struct ContentView: View {
     @ObservedObject private var pluginManager = PluginManager.shared
-    @State private var hasAccessibilityPermission = false
 
     var body: some View {
-        VStack(spacing: 16) {
-            if !hasAccessibilityPermission {
-                Text("Accessibility permission required")
-                    .foregroundStyle(.secondary)
-                Button("Open Accessibility Settings") {
-                    openAccessibilitySettings()
+        VStack(alignment: .leading, spacing: 12) {
+            // Track buttons
+            FlowLayout(spacing: 6) {
+                ForEach(pluginManager.scanResult.tracks, id: \.self) { track in
+                    Button(track) {
+                        pluginManager.focusOnTrack(track)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
-                Button("Check Permission") {
-                    hasAccessibilityPermission = AXIsProcessTrusted()
+            }
+
+            // Plugin buttons
+            FlowLayout(spacing: 6) {
+                ForEach(pluginManager.scanResult.plugins, id: \.self) { plugin in
+                    Button(plugin) {
+                        pluginManager.focusOnPlugin(plugin)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
-            } else {
-                Button("Scan Live Plugins") {
+            }
+
+            Spacer()
+
+            // Bottom links
+            HStack(spacing: 16) {
+                Button("Refresh") {
                     pluginManager.performScan()
                 }
+                .buttonStyle(.link)
+                .controlSize(.small)
 
-                if !pluginManager.scanResult.tracks.isEmpty {
-                    Text("Focus on track:")
-                        .font(.headline)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            ForEach(pluginManager.scanResult.tracks, id: \.self) { track in
-                                Button(track) {
-                                    pluginManager.focusOnTrack(track)
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                            Button("Show All") {
-                                pluginManager.showAllPlugins()
-                            }
-                            .buttonStyle(.borderedProminent)
-                        }
-                    }
-
-                    Text("Focus on plugin:")
-                        .font(.headline)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            ForEach(pluginManager.scanResult.plugins, id: \.self) { plugin in
-                                Button(plugin) {
-                                    pluginManager.focusOnPlugin(plugin)
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                        }
-                    }
-
-                    Button("Fit to Screen") {
-                        pluginManager.fitToScreen()
-                    }
-                    .buttonStyle(.borderedProminent)
+                Button("Show all") {
+                    pluginManager.showAllPlugins()
                 }
-
-                if !pluginManager.outputLines.isEmpty {
-                    List(pluginManager.outputLines, id: \.self) { line in
-                        Text(line)
-                            .font(.system(.body, design: .monospaced))
-                    }
-                }
+                .buttonStyle(.link)
+                .controlSize(.small)
             }
         }
         .padding()
-        .frame(minWidth: 500, minHeight: 400)
+        .frame(width: 500, height: 150)
         .onAppear {
-            hasAccessibilityPermission = AXIsProcessTrusted()
-            if hasAccessibilityPermission {
+            if AXIsProcessTrusted() {
                 pluginManager.performScan()
             }
         }
-    }
-
-    func openAccessibilitySettings() {
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-        NSWorkspace.shared.open(url)
     }
 }
 
