@@ -9,6 +9,10 @@ import SwiftUI
 import ApplicationServices
 import Combine
 
+extension Notification.Name {
+    static let resizeWindow = Notification.Name("resizeWindow")
+}
+
 // MARK: - Data Structures
 
 struct PluginWindow {
@@ -31,11 +35,15 @@ struct PluginScanResult {
     }
 
     var tracks: [String] {
-        Array(Set(pluginWindows.map { $0.track })).sorted()
+        Array(Set(pluginWindows.map { $0.track })).sorted {
+            $0.localizedStandardCompare($1) == .orderedAscending
+        }
     }
 
     var plugins: [String] {
-        Array(Set(pluginWindows.map { $0.plugin })).sorted()
+        Array(Set(pluginWindows.map { $0.plugin })).sorted {
+            $0.localizedStandardCompare($1) == .orderedAscending
+        }
     }
 
     static let empty = PluginScanResult(pluginWindows: [])
@@ -141,8 +149,20 @@ class PluginManager: ObservableObject {
     func performScan() {
         activateLive { [self] _ in
             let (output, result) = scanPlugins(named: "Live")
+
+            // Don't update if no plugins found
+            guard !result.pluginWindows.isEmpty else {
+                outputLines = ["No plugins found, keeping current list"]
+                return
+            }
+
             scanResult = result
             outputLines = output
+
+            // Resize window to fit new content (delay to let SwiftUI update)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NotificationCenter.default.post(name: .resizeWindow, object: nil)
+            }
         }
     }
 
@@ -264,6 +284,61 @@ class PluginManager: ObservableObject {
 
             outputLines = ["Restored \(shownCount) plugin window(s)"]
         }
+    }
+
+    func closePlugin(_ plugin: String) {
+        activateLive { [self] _ in
+            var closedCount = 0
+
+            for index in scanResult.pluginWindows.indices {
+                if scanResult.pluginWindows[index].plugin == plugin {
+                    let window = scanResult.pluginWindows[index].windowElement
+                    if closeWindow(window) {
+                        closedCount += 1
+                    }
+                }
+            }
+
+            outputLines = ["Closed \(closedCount) '\(plugin)' window(s)"]
+
+            // Refresh and resize
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.performScan()
+            }
+        }
+    }
+
+    func closeTrack(_ track: String) {
+        activateLive { [self] _ in
+            var closedCount = 0
+
+            for index in scanResult.pluginWindows.indices {
+                if scanResult.pluginWindows[index].track == track {
+                    let window = scanResult.pluginWindows[index].windowElement
+                    if closeWindow(window) {
+                        closedCount += 1
+                    }
+                }
+            }
+
+            outputLines = ["Closed \(closedCount) plugin(s) on '\(track)'"]
+
+            // Refresh and resize
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.performScan()
+            }
+        }
+    }
+
+    func closeWindow(_ window: AXUIElement) -> Bool {
+        // Get the close button and press it
+        var closeButtonRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
+              let closeButton = closeButtonRef else {
+            return false
+        }
+        let result = AXUIElementPerformAction(closeButton as! AXUIElement, kAXPressAction as CFString)
+        return result == .success
     }
 
     func focusOnPlugin(_ keepPlugin: String) {
@@ -399,26 +474,45 @@ struct ContentView: View {
             // Track buttons
             FlowLayout(spacing: 6) {
                 ForEach(pluginManager.scanResult.tracks, id: \.self) { track in
-                    Button(track) {
-                        pluginManager.focusOnTrack(track)
+                    HStack(spacing: 2) {
+                        Button(track) {
+                            pluginManager.focusOnTrack(track)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button {
+                            pluginManager.closeTrack(track)
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.mini)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
             }
 
             // Plugin buttons
             FlowLayout(spacing: 6) {
                 ForEach(pluginManager.scanResult.plugins, id: \.self) { plugin in
-                    Button(plugin) {
-                        pluginManager.focusOnPlugin(plugin)
+                    HStack(spacing: 2) {
+                        Button(plugin) {
+                            pluginManager.performScan()
+                            pluginManager.focusOnPlugin(plugin)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button {
+                            pluginManager.closePlugin(plugin)
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.mini)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
             }
-
-            Spacer()
 
             // Bottom links
             HStack(spacing: 16) {
@@ -436,7 +530,7 @@ struct ContentView: View {
             }
         }
         .padding()
-        .frame(width: 500, height: 150)
+        .frame(width: 500)
         .onAppear {
             if AXIsProcessTrusted() {
                 pluginManager.performScan()
