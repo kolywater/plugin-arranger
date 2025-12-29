@@ -286,6 +286,21 @@ class PluginManager: ObservableObject {
         }
     }
 
+    func hideAllPlugins() {
+        activateLive { [self] _ in
+            var hiddenCount = 0
+
+            for index in scanResult.pluginWindows.indices {
+                if !scanResult.pluginWindows[index].isHidden {
+                    hideWindow(at: index)
+                    hiddenCount += 1
+                }
+            }
+
+            outputLines = ["Hid \(hiddenCount) plugin window(s)"]
+        }
+    }
+
     func closePlugin(_ plugin: String) {
         activateLive { [self] _ in
             var closedCount = 0
@@ -474,43 +489,61 @@ struct ContentView: View {
             // Track buttons
             FlowLayout(spacing: 6) {
                 ForEach(pluginManager.scanResult.tracks, id: \.self) { track in
-                    HStack(spacing: 2) {
+                    HStack(spacing: 0) {
                         Button(track) {
                             pluginManager.focusOnTrack(track)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .buttonStyle(.plain)
+                        .font(.caption)
+
+                        Text("|")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                            .padding(.horizontal, 3)
 
                         Button {
                             pluginManager.closeTrack(track)
                         } label: {
-                            Image(systemName: "xmark")
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.primary)
                         }
-                        .buttonStyle(.borderless)
-                        .controlSize(.mini)
+                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.gray.opacity(0.3))
+                    .cornerRadius(6)
                 }
             }
 
             // Plugin buttons
             FlowLayout(spacing: 6) {
                 ForEach(pluginManager.scanResult.plugins, id: \.self) { plugin in
-                    HStack(spacing: 2) {
+                    HStack(spacing: 0) {
                         Button(plugin) {
                             pluginManager.performScan()
                             pluginManager.focusOnPlugin(plugin)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .buttonStyle(.plain)
+                        .font(.caption)
+
+                        Text("|")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                            .padding(.horizontal, 3)
 
                         Button {
                             pluginManager.closePlugin(plugin)
                         } label: {
-                            Image(systemName: "xmark")
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.primary)
                         }
-                        .buttonStyle(.borderless)
-                        .controlSize(.mini)
+                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.gray.opacity(0.3))
+                    .cornerRadius(6)
                 }
             }
 
@@ -527,10 +560,16 @@ struct ContentView: View {
                 }
                 .buttonStyle(.link)
                 .controlSize(.small)
+
+                Button("Hide all") {
+                    pluginManager.hideAllPlugins()
+                }
+                .buttonStyle(.link)
+                .controlSize(.small)
             }
         }
         .padding()
-        .frame(width: 500)
+        .frame(width: 400)
         .onAppear {
             if AXIsProcessTrusted() {
                 pluginManager.performScan()

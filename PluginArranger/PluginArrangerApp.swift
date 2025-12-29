@@ -91,16 +91,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func setupPanel() {
         let panel = NonActivatingPanel(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 150),
-            styleMask: [.titled, .closable, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
 
-        panel.title = "PluginArranger"
         panel.level = .statusBar
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
+        panel.isMovableByWindowBackground = true
         let hostingView = NSHostingView(rootView: ContentView())
         self.hostingView = hostingView
         let size = hostingView.fittingSize
