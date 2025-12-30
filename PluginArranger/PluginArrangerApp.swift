@@ -140,7 +140,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "PluginArranger")
+            button.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "PluginArranger")
         }
 
         statusMenu = NSMenu()
@@ -156,21 +156,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Rebuild menu
         menu.removeAllItems()
 
-        menu.addItem(NSMenuItem(title: "Scan Plugins", action: #selector(scanPlugins), keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Refresh", action: #selector(scanPlugins), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Show All", action: #selector(showAllPlugins), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Hide All", action: #selector(hideAllPlugins), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Arrange", action: #selector(fitToScreen), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
-
-        // Plugins
-        for plugin in PluginManager.shared.scanResult.plugins {
-            let item = NSMenuItem(title: plugin, action: #selector(focusOnPlugin(_:)), keyEquivalent: "")
-            item.representedObject = plugin
-            menu.addItem(item)
-        }
-
-        if !PluginManager.shared.scanResult.plugins.isEmpty {
-            menu.addItem(NSMenuItem.separator())
-        }
 
         // Tracks
         for track in PluginManager.shared.scanResult.tracks {
@@ -183,8 +173,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(NSMenuItem.separator())
         }
 
-        menu.addItem(NSMenuItem(title: "Fit to Screen", action: #selector(fitToScreen), keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
+        // Plugins
+        for plugin in PluginManager.shared.scanResult.plugins {
+            let item = NSMenuItem(title: plugin, action: #selector(focusOnPlugin(_:)), keyEquivalent: "")
+            item.representedObject = plugin
+            menu.addItem(item)
+        }
+
+        if !PluginManager.shared.scanResult.plugins.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
+
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
     }
 
@@ -194,6 +193,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showAllPlugins() {
         PluginManager.shared.showAllPlugins()
+    }
+
+    @objc func hideAllPlugins() {
+        PluginManager.shared.hideAllPlugins()
     }
 
     @objc func focusOnPlugin(_ sender: NSMenuItem) {
