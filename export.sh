@@ -18,5 +18,3 @@ xcodebuild -exportArchive \
   -exportOptionsPlist ExportOptions.plist
 
 echo "Done! App exported to: $PROJECT_DIR/Export/PluginArranger.app"
-
-rm -rf build
