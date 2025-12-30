@@ -33,28 +33,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func resizeWindowToFit() {
         guard let hostingView = hostingView, let panel = panel, let screen = NSScreen.main else {
-            print("DEBUG resize: guard failed")
             return
         }
 
         // Force layout update before getting size
         hostingView.layoutSubtreeIfNeeded()
         let contentSize = hostingView.fittingSize
-        print("DEBUG resize: contentSize = \(contentSize)")
 
         // Calculate frame size (content + title bar)
         let titleBarHeight = panel.frame.height - panel.contentLayoutRect.height
         let frameSize = NSSize(width: contentSize.width, height: contentSize.height + titleBarHeight)
-        print("DEBUG resize: frameSize = \(frameSize)")
 
         // Calculate origin to keep at lower left
-        let screenFrame = screen.visibleFrame
-        let newOrigin = NSPoint(x: screenFrame.minX, y: screenFrame.minY)
-        print("DEBUG resize: newOrigin = \(newOrigin)")
+        let fullFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
+
+        // Check if dock is on the right
+        let spaceLeftOfDock = visibleFrame.maxX - fullFrame.minX
+
+        // If window fits to the left of where dock starts, use true screen bottom
+        let newY: CGFloat
+        if frameSize.width < spaceLeftOfDock {
+            newY = fullFrame.minY
+        } else {
+            newY = visibleFrame.minY
+        }
+
+        let newOrigin = NSPoint(x: visibleFrame.minX, y: newY)
 
         // Set frame with correct size and position
         panel.setFrame(NSRect(origin: newOrigin, size: frameSize), display: true, animate: false)
-        print("DEBUG resize: frame set to \(panel.frame)")
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -107,10 +115,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.setContentSize(size)
         panel.contentView = hostingView
 
-        // Position at lower left corner (with small margin)
+        // Position at lower left corner
         if let screen = NSScreen.main {
-            let screenFrame = screen.visibleFrame
-            panel.setFrameOrigin(NSPoint(x: screenFrame.minX, y: screenFrame.minY))
+            let fullFrame = screen.frame
+            let visibleFrame = screen.visibleFrame
+            let spaceLeftOfDock = visibleFrame.maxX - fullFrame.minX
+
+            let newY: CGFloat
+            if panel.frame.width < spaceLeftOfDock {
+                newY = fullFrame.minY
+            } else {
+                newY = visibleFrame.minY
+            }
+            panel.setFrameOrigin(NSPoint(x: visibleFrame.minX, y: newY))
         }
 
         panel.orderFront(nil)

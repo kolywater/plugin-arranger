@@ -133,9 +133,9 @@ class PluginManager: ObservableObject {
     func activateLive(then action: @escaping (NSRunningApplication) -> Void) {
         let runningApps = NSWorkspace.shared.runningApplications
         guard let liveApp = runningApps.first(where: {
-            $0.localizedName?.contains("Live") == true
+            $0.localizedName == "Live"
         }) else {
-            outputLines = ["App 'Live' not found"]
+            outputLines = ["Ableton Live not found"]
             return
         }
 
@@ -169,9 +169,9 @@ class PluginManager: ObservableObject {
     func scanPlugins(named appName: String) -> (output: [String], result: PluginScanResult) {
         let runningApps = NSWorkspace.shared.runningApplications
         guard let app = runningApps.first(where: {
-            $0.localizedName?.contains(appName) == true
+            $0.localizedName == "Live"
         }) else {
-            return (["App '\(appName)' not found"], .empty)
+            return (["Ableton Live not found"], .empty)
         }
 
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
@@ -298,6 +298,36 @@ class PluginManager: ObservableObject {
             }
 
             outputLines = ["Hid \(hiddenCount) plugin window(s)"]
+        }
+    }
+
+    func hideTrack(_ track: String) {
+        activateLive { [self] _ in
+            var hiddenCount = 0
+
+            for index in scanResult.pluginWindows.indices {
+                if scanResult.pluginWindows[index].track == track && !scanResult.pluginWindows[index].isHidden {
+                    hideWindow(at: index)
+                    hiddenCount += 1
+                }
+            }
+
+            outputLines = ["Hid \(hiddenCount) plugin(s) on '\(track)'"]
+        }
+    }
+
+    func hidePlugin(_ plugin: String) {
+        activateLive { [self] _ in
+            var hiddenCount = 0
+
+            for index in scanResult.pluginWindows.indices {
+                if scanResult.pluginWindows[index].plugin == plugin && !scanResult.pluginWindows[index].isHidden {
+                    hideWindow(at: index)
+                    hiddenCount += 1
+                }
+            }
+
+            outputLines = ["Hid \(hiddenCount) '\(plugin)' window(s)"]
         }
     }
 
@@ -502,6 +532,19 @@ struct ContentView: View {
                             .padding(.horizontal, 3)
 
                         Button {
+                            pluginManager.hideTrack(track)
+                        } label: {
+                            Image(systemName: "eye.slash")
+                                .foregroundColor(.primary)
+                        }
+                        .buttonStyle(.plain)
+
+                        Text("|")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                            .padding(.horizontal, 3)
+
+                        Button {
                             pluginManager.closeTrack(track)
                         } label: {
                             Image(systemName: "xmark.circle.fill")
@@ -526,6 +569,19 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                         .font(.caption)
+
+                        Text("|")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                            .padding(.horizontal, 3)
+
+                        Button {
+                            pluginManager.hidePlugin(plugin)
+                        } label: {
+                            Image(systemName: "eye.slash")
+                                .foregroundColor(.primary)
+                        }
+                        .buttonStyle(.plain)
 
                         Text("|")
                             .foregroundColor(.secondary)
@@ -563,6 +619,12 @@ struct ContentView: View {
 
                 Button("Hide all") {
                     pluginManager.hideAllPlugins()
+                }
+                .buttonStyle(.link)
+                .controlSize(.small)
+
+                Button("Arrange") {
+                    pluginManager.fitToScreen()
                 }
                 .buttonStyle(.link)
                 .controlSize(.small)
