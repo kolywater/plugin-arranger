@@ -79,7 +79,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func handleResizeNotification() {
-        print("DEBUG: resize notification received")
         resizeWindowToFit()
     }
 
@@ -87,9 +86,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self = self, let panel = self.panel else { return event }
 
-            // Check if click is in our panel
             if event.window == panel {
-                print("DEBUG: Click in panel detected")
                 PluginManager.shared.performScan()
             }
             return event

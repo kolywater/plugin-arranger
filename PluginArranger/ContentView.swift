@@ -509,6 +509,55 @@ struct FlowLayout: Layout {
     }
 }
 
+// MARK: - ItemButton
+
+struct ItemButton: View {
+    let label: String
+    let onSelect: () -> Void
+    let onHide: () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(label) {
+                onSelect()
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+
+            Text("|")
+                .foregroundColor(.secondary)
+                .font(.caption)
+                .padding(.horizontal, 3)
+
+            Button {
+                onHide()
+            } label: {
+                Image(systemName: "eye.slash")
+                    .foregroundColor(.primary)
+            }
+            .buttonStyle(.plain)
+
+            Text("|")
+                .foregroundColor(.secondary)
+                .font(.caption)
+                .padding(.horizontal, 3)
+
+            Button {
+                onClose()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.primary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.gray.opacity(0.3))
+        .cornerRadius(6)
+    }
+}
+
 // MARK: - ContentView
 
 struct ContentView: View {
@@ -519,87 +568,27 @@ struct ContentView: View {
             // Track buttons
             FlowLayout(spacing: 6) {
                 ForEach(pluginManager.scanResult.tracks, id: \.self) { track in
-                    HStack(spacing: 0) {
-                        Button(track) {
-                            pluginManager.focusOnTrack(track)
-                        }
-                        .buttonStyle(.plain)
-                        .font(.caption)
-
-                        Text("|")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                            .padding(.horizontal, 3)
-
-                        Button {
-                            pluginManager.hideTrack(track)
-                        } label: {
-                            Image(systemName: "eye.slash")
-                                .foregroundColor(.primary)
-                        }
-                        .buttonStyle(.plain)
-
-                        Text("|")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                            .padding(.horizontal, 3)
-
-                        Button {
-                            pluginManager.closeTrack(track)
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.primary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.gray.opacity(0.3))
-                    .cornerRadius(6)
+                    ItemButton(
+                        label: track,
+                        onSelect: { pluginManager.focusOnTrack(track) },
+                        onHide: { pluginManager.hideTrack(track) },
+                        onClose: { pluginManager.closeTrack(track) }
+                    )
                 }
             }
 
             // Plugin buttons
             FlowLayout(spacing: 6) {
                 ForEach(pluginManager.scanResult.plugins, id: \.self) { plugin in
-                    HStack(spacing: 0) {
-                        Button(plugin) {
+                    ItemButton(
+                        label: plugin,
+                        onSelect: {
                             pluginManager.performScan()
                             pluginManager.focusOnPlugin(plugin)
-                        }
-                        .buttonStyle(.plain)
-                        .font(.caption)
-
-                        Text("|")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                            .padding(.horizontal, 3)
-
-                        Button {
-                            pluginManager.hidePlugin(plugin)
-                        } label: {
-                            Image(systemName: "eye.slash")
-                                .foregroundColor(.primary)
-                        }
-                        .buttonStyle(.plain)
-
-                        Text("|")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                            .padding(.horizontal, 3)
-
-                        Button {
-                            pluginManager.closePlugin(plugin)
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.primary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.gray.opacity(0.3))
-                    .cornerRadius(6)
+                        },
+                        onHide: { pluginManager.hidePlugin(plugin) },
+                        onClose: { pluginManager.closePlugin(plugin) }
+                    )
                 }
             }
 
