@@ -3,3 +3,7 @@
 xcuserdata/
 DerivedData/
 .build/
+
+# Build artifacts
+Export/
+build/
