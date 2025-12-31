@@ -150,8 +150,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         // Run scan before menu opens
-        let (_, result) = PluginManager.shared.scanPlugins(named: "Live")
-        PluginManager.shared.scanResult = result
+        let result = PluginManager.shared.scanPlugins()
+        if !result.pluginWindows.isEmpty {
+            PluginManager.shared.scanResult = result
+        }
 
         // Rebuild menu
         menu.removeAllItems()
