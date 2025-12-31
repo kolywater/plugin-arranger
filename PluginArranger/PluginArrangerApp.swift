@@ -133,7 +133,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        PluginManager.shared.restoreAllHiddenWindowsSync()
+        PluginManager.shared.restoreAllHiddenWindows()
     }
 
     func setupMenuBar() {
@@ -186,6 +186,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(NSMenuItem.separator())
         }
 
+        let windowTitle = panel?.isVisible == true ? "Hide docked window" : "Show docked window"
+        menu.addItem(NSMenuItem(title: windowTitle, action: #selector(toggleDockedWindow), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
     }
 
@@ -203,18 +206,43 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func focusOnPlugin(_ sender: NSMenuItem) {
         if let plugin = sender.representedObject as? String {
-            PluginManager.shared.focusOnPlugin(plugin)
+            PluginManager.shared.focus(on: \.pluginName, value: plugin)
         }
     }
 
     @objc func focusOnTrack(_ sender: NSMenuItem) {
         if let track = sender.representedObject as? String {
-            PluginManager.shared.focusOnTrack(track)
+            PluginManager.shared.focus(on: \.trackName, value: track)
         }
     }
 
     @objc func fitToScreen() {
         PluginManager.shared.fitToScreen()
+    }
+
+    @objc func toggleDockedWindow() {
+        guard let panel = panel else { return }
+
+        if panel.isVisible {
+            panel.orderOut(nil)
+        } else {
+            // Recalculate position
+            if let screen = NSScreen.main {
+                let fullFrame = screen.frame
+                let visibleFrame = screen.visibleFrame
+                let spaceLeftOfDock = visibleFrame.maxX - fullFrame.minX
+
+                let newY: CGFloat
+                if panel.frame.width < spaceLeftOfDock {
+                    newY = fullFrame.minY
+                } else {
+                    newY = visibleFrame.minY
+                }
+                panel.setFrameOrigin(NSPoint(x: visibleFrame.minX, y: newY))
+            }
+            panel.orderFront(nil)
+            PluginManager.shared.performScan()
+        }
     }
 
     @objc func quit() {

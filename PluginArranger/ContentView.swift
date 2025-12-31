@@ -16,15 +16,15 @@ extension Notification.Name {
 // MARK: - Data Structures
 
 class PluginWindow {
-    let plugin: String
-    let track: String
+    let pluginName: String
+    let trackName: String
     let windowElement: AXUIElement
     var originalPosition: CGPoint?
     var isHidden: Bool = false
 
-    init(plugin: String, track: String, windowElement: AXUIElement, originalPosition: CGPoint? = nil, isHidden: Bool = false) {
-        self.plugin = plugin
-        self.track = track
+    init(pluginName: String, trackName: String, windowElement: AXUIElement, originalPosition: CGPoint? = nil, isHidden: Bool = false) {
+        self.pluginName = pluginName
+        self.trackName = trackName
         self.windowElement = windowElement
         self.originalPosition = originalPosition
         self.isHidden = isHidden
@@ -66,6 +66,18 @@ extension PluginWindow {
         }
     }
 
+    func show() {
+        position = originalPosition
+        isHidden = false
+    }
+
+    func hide() {
+        originalPosition = position
+        isHidden = true
+        guard let screen = NSScreen.main else { return }
+        position = CGPoint(x: screen.frame.maxX, y: screen.frame.maxY)
+    }
+
     func close() {
         var closeButtonRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(windowElement, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
@@ -77,24 +89,12 @@ extension PluginWindow {
 struct PluginScanResult {
     var pluginWindows: [PluginWindow]
 
-    var trackToWindows: [String: [PluginWindow]] {
-        Dictionary(grouping: pluginWindows, by: { $0.track })
-    }
-
-    var pluginToWindows: [String: [PluginWindow]] {
-        Dictionary(grouping: pluginWindows, by: { $0.plugin })
-    }
-
     var tracks: [String] {
-        Array(Set(pluginWindows.map { $0.track })).sorted {
-            $0.localizedStandardCompare($1) == .orderedAscending
-        }
+        Set(pluginWindows.map(\.trackName)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     var plugins: [String] {
-        Array(Set(pluginWindows.map { $0.plugin })).sorted {
-            $0.localizedStandardCompare($1) == .orderedAscending
-        }
+        Set(pluginWindows.map(\.pluginName)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     static let empty = PluginScanResult(pluginWindows: [])
@@ -109,55 +109,91 @@ class PluginManager: ObservableObject {
 
     private init() {}
 
+    // MARK: - Window Operations
+
     func restoreAllHiddenWindows() {
         scanResult.pluginWindows
-            .filter { $0.isHidden }
-            .forEach { showWindow($0) }
-    }
-
-    func restoreAllHiddenWindowsSync() {
-        scanResult.pluginWindows
-            .filter { $0.isHidden && $0.originalPosition != nil }
+            .filter(\.isHidden)
             .forEach { $0.position = $0.originalPosition }
     }
 
-    func showWindow(_ pluginWindow: PluginWindow) {
-        pluginWindow.position = pluginWindow.originalPosition
-        pluginWindow.isHidden = false
-    }
-
-    func hideWindow(_ pluginWindow: PluginWindow) {
-        pluginWindow.originalPosition = pluginWindow.position
-        pluginWindow.isHidden = true
-
-        guard let screen = NSScreen.main else { return }
-        pluginWindow.position = CGPoint(x: screen.frame.maxX, y: screen.frame.maxY)
-    }
-
-    // MARK: - Actions
-
-    func activateLive(then action: @escaping (NSRunningApplication) -> Void) {
-        let runningApps = NSWorkspace.shared.runningApplications
-        guard let liveApp = runningApps.first(where: {
-            $0.localizedName == "Live"
-        }) else {
-            return
-        }
-
-        liveApp.activate()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            action(liveApp)
+    func showAllPlugins() {
+        activateLive { [self] in
+            scanResult.pluginWindows.filter(\.isHidden).forEach { $0.show() }
+            objectWillChange.send()
         }
     }
+
+    func hideAllPlugins() {
+        activateLive { [self] in
+            scanResult.pluginWindows.filter { !$0.isHidden }.forEach { $0.hide() }
+            objectWillChange.send()
+        }
+    }
+
+    func hideWindows(matching keyPath: KeyPath<PluginWindow, String>, value: String) {
+        activateLive { [self] in
+            scanResult.pluginWindows
+                .filter { $0[keyPath: keyPath] == value && !$0.isHidden }
+                .forEach { $0.hide() }
+            objectWillChange.send()
+        }
+    }
+
+    func showWindows(matching keyPath: KeyPath<PluginWindow, String>, value: String) {
+        activateLive { [self] in
+            scanResult.pluginWindows
+                .filter { $0[keyPath: keyPath] == value && $0.isHidden }
+                .forEach { $0.show() }
+            objectWillChange.send()
+        }
+    }
+
+    func allHidden(matching keyPath: KeyPath<PluginWindow, String>, value: String) -> Bool {
+        let matching = scanResult.pluginWindows.filter { $0[keyPath: keyPath] == value }
+        return !matching.isEmpty && matching.allSatisfy(\.isHidden)
+    }
+
+    func closeWindows(matching keyPath: KeyPath<PluginWindow, String>, value: String) {
+        activateLive { [self] in
+            scanResult.pluginWindows
+                .filter { $0[keyPath: keyPath] == value }
+                .forEach { $0.close() }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.performScan()
+            }
+        }
+    }
+
+    func focus(on keyPath: KeyPath<PluginWindow, String>, value: String) {
+        activateLive { [self] in
+            scanResult.pluginWindows.forEach { window in
+                if window[keyPath: keyPath] == value {
+                    if window.isHidden { window.show() }
+                } else {
+                    if !window.isHidden { window.hide() }
+                }
+            }
+            arrangeVisibleWindows()
+            objectWillChange.send()
+        }
+    }
+
+    func fitToScreen() {
+        activateLive { [self] in
+            arrangeVisibleWindows()
+        }
+    }
+
+    // MARK: - Scanning
 
     func performScan() {
-        activateLive { [self] _ in
+        activateLive { [self] in
             let result = scanPlugins()
             guard !result.pluginWindows.isEmpty else { return }
             scanResult = result
 
-            // Resize window to fit new content (delay to let SwiftUI update)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 NotificationCenter.default.post(name: .resizeWindow, object: nil)
             }
@@ -165,8 +201,7 @@ class PluginManager: ObservableObject {
     }
 
     func scanPlugins() -> PluginScanResult {
-        let runningApps = NSWorkspace.shared.runningApplications
-        guard let app = runningApps.first(where: { $0.localizedName == "Live" }) else {
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == "Live" }) else {
             return .empty
         }
 
@@ -179,152 +214,67 @@ class PluginManager: ObservableObject {
         }
 
         let pluginWindows: [PluginWindow] = windows.compactMap { window in
-            var windowTitleRef: CFTypeRef?
-            AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &windowTitleRef)
-            guard let windowTitle = windowTitleRef as? String,
-                  windowTitle.contains("/") else { return nil }
+            var titleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
+            guard let title = titleRef as? String,
+                  let slashIndex = title.firstIndex(of: "/") else { return nil }
 
-            let parts = windowTitle.split(separator: "/", maxSplits: 1)
-            guard parts.count == 2 else { return nil }
+            let pluginName = String(title[..<slashIndex])
+            let trackName = String(title[title.index(after: slashIndex)...])
 
-            let plugin = String(parts[0])
-            let track = String(parts[1])
-
-            let existing = scanResult.pluginWindows.first { $0.plugin == plugin && $0.track == track }
+            let existing = scanResult.pluginWindows.first { $0.pluginName == pluginName && $0.trackName == trackName }
             let pluginWindow = PluginWindow(
-                plugin: plugin,
-                track: track,
+                pluginName: pluginName,
+                trackName: trackName,
                 windowElement: window,
-                originalPosition: existing?.originalPosition,
+                originalPosition: existing?.originalPosition ?? nil,
                 isHidden: existing?.isHidden ?? false
             )
-            if pluginWindow.originalPosition == nil {
-                pluginWindow.originalPosition = pluginWindow.position
-            }
+            pluginWindow.originalPosition = pluginWindow.originalPosition ?? pluginWindow.position
             return pluginWindow
         }
 
         return PluginScanResult(pluginWindows: pluginWindows)
     }
 
-    func focusOnTrack(_ keepTrack: String) {
-        activateLive { [self] _ in
-            scanResult.pluginWindows
-                .filter { $0.track == keepTrack && $0.isHidden }
-                .forEach { showWindow($0) }
-            scanResult.pluginWindows
-                .filter { $0.track != keepTrack && !$0.isHidden }
-                .forEach { hideWindow($0) }
-            arrangeVisibleWindows()
+    // MARK: - Helpers
+
+    private func activateLive(then action: @escaping () -> Void) {
+        guard let liveApp = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == "Live" }) else {
+            return
         }
+        liveApp.activate()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { action() }
     }
 
-    func showAllPlugins() {
-        activateLive { [self] _ in
-            scanResult.pluginWindows
-                .filter { $0.isHidden }
-                .forEach { showWindow($0) }
-        }
-    }
-
-    func hideAllPlugins() {
-        activateLive { [self] _ in
-            scanResult.pluginWindows
-                .filter { !$0.isHidden }
-                .forEach { hideWindow($0) }
-        }
-    }
-
-    func hideWindowsOnTrack(_ track: String) {
-        activateLive { [self] _ in
-            scanResult.pluginWindows
-                .filter { $0.track == track && !$0.isHidden }
-                .forEach { hideWindow($0) }
-        }
-    }
-
-    func hidePluginsMatchingName(_ plugin: String) {
-        activateLive { [self] _ in
-            scanResult.pluginWindows
-                .filter { $0.plugin == plugin && !$0.isHidden }
-                .forEach { hideWindow($0) }
-        }
-    }
-
-    func closePluginsMatchingName(_ plugin: String) {
-        activateLive { [self] _ in
-            scanResult.pluginWindows
-                .filter { $0.plugin == plugin }
-                .forEach { $0.close() }
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self.performScan()
-            }
-        }
-    }
-
-    func closeWindowsOnTrack(_ track: String) {
-        activateLive { [self] _ in
-            scanResult.pluginWindows
-                .filter { $0.track == track }
-                .forEach { $0.close() }
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self.performScan()
-            }
-        }
-    }
-
-    func focusOnPlugin(_ keepPlugin: String) {
-        activateLive { [self] _ in
-            scanResult.pluginWindows
-                .filter { $0.plugin == keepPlugin && $0.isHidden }
-                .forEach { showWindow($0) }
-            scanResult.pluginWindows
-                .filter { $0.plugin != keepPlugin && !$0.isHidden }
-                .forEach { hideWindow($0) }
-            arrangeVisibleWindows()
-        }
-    }
-
-    func arrangeVisibleWindows() {
+    private func arrangeVisibleWindows() {
         guard let screen = NSScreen.main else { return }
         let frame = screen.visibleFrame
-
         let topY = screen.frame.height - frame.maxY
         let bottomY = screen.frame.height - frame.minY
 
         let visibleWindows = scanResult.pluginWindows
             .filter { !$0.isHidden }
-            .sorted { $0.plugin < $1.plugin }
+            .sorted { $0.pluginName < $1.pluginName }
             .map { ($0, $0.size ?? CGSize(width: 400, height: 300)) }
 
-        var currentX: CGFloat = frame.minX
-        var currentY: CGFloat = topY
+        var currentX = frame.minX
+        var currentY = topY
         var columnWidth: CGFloat = 0
 
-        for (pluginWindow, size) in visibleWindows {
+        for (window, size) in visibleWindows {
             if currentY + size.height > bottomY && currentY > topY {
                 currentX += columnWidth
                 currentY = topY
                 columnWidth = 0
-
                 if currentX + size.width > frame.maxX {
                     currentX = frame.minX
                     currentY = topY
                 }
             }
-
-            pluginWindow.position = CGPoint(x: currentX, y: currentY)
-
+            window.position = CGPoint(x: currentX, y: currentY)
             currentY += size.height
             columnWidth = max(columnWidth, size.width)
-        }
-    }
-
-    func fitToScreen() {
-        activateLive { [self] _ in
-            arrangeVisibleWindows()
         }
     }
 }
@@ -377,7 +327,8 @@ struct FlowLayout: Layout {
 struct ItemButton: View {
     let label: String
     let onSelect: () -> Void
-    let onHide: () -> Void
+    let isHidden: Bool
+    let onToggleVisibility: () -> Void
     let onClose: () -> Void
 
     var body: some View {
@@ -394,9 +345,9 @@ struct ItemButton: View {
                 .padding(.horizontal, 3)
 
             Button {
-                onHide()
+                onToggleVisibility()
             } label: {
-                Image(systemName: "eye.slash")
+                Image(systemName: isHidden ? "eye" : "eye.slash")
                     .foregroundColor(.primary)
             }
             .buttonStyle(.plain)
@@ -409,7 +360,7 @@ struct ItemButton: View {
             Button {
                 onClose()
             } label: {
-                Image(systemName: "xmark.circle.fill")
+                Image(systemName: "xmark")
                     .foregroundColor(.primary)
             }
             .buttonStyle(.plain)
@@ -433,9 +384,16 @@ struct ContentView: View {
                 ForEach(pluginManager.scanResult.tracks, id: \.self) { track in
                     ItemButton(
                         label: track,
-                        onSelect: { pluginManager.focusOnTrack(track) },
-                        onHide: { pluginManager.hideWindowsOnTrack(track) },
-                        onClose: { pluginManager.closeWindowsOnTrack(track) }
+                        onSelect: { pluginManager.focus(on: \.trackName, value: track) },
+                        isHidden: pluginManager.allHidden(matching: \.trackName, value: track),
+                        onToggleVisibility: {
+                            if pluginManager.allHidden(matching: \.trackName, value: track) {
+                                pluginManager.showWindows(matching: \.trackName, value: track)
+                            } else {
+                                pluginManager.hideWindows(matching: \.trackName, value: track)
+                            }
+                        },
+                        onClose: { pluginManager.closeWindows(matching: \.trackName, value: track) }
                     )
                 }
             }
@@ -447,10 +405,17 @@ struct ContentView: View {
                         label: plugin,
                         onSelect: {
                             pluginManager.performScan()
-                            pluginManager.focusOnPlugin(plugin)
+                            pluginManager.focus(on: \.pluginName, value: plugin)
                         },
-                        onHide: { pluginManager.hidePluginsMatchingName(plugin) },
-                        onClose: { pluginManager.closePluginsMatchingName(plugin) }
+                        isHidden: pluginManager.allHidden(matching: \.pluginName, value: plugin),
+                        onToggleVisibility: {
+                            if pluginManager.allHidden(matching: \.pluginName, value: plugin) {
+                                pluginManager.showWindows(matching: \.pluginName, value: plugin)
+                            } else {
+                                pluginManager.hideWindows(matching: \.pluginName, value: plugin)
+                            }
+                        },
+                        onClose: { pluginManager.closeWindows(matching: \.pluginName, value: plugin) }
                     )
                 }
             }
