@@ -14,3 +14,5 @@ xcodebuild -project PluginArranger.xcodeproj \
   -quiet
 
 open build/Build/Products/Debug/PluginArranger.app
+
+echo "Debug output: /tmp/pluginarranger.log"

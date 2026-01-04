@@ -8,6 +8,34 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Debug Logging
+
+final class DebugLog {
+    static let shared = DebugLog()
+    private let path = "/tmp/pluginarranger.log"
+    private var handle: FileHandle?
+    private let formatter = ISO8601DateFormatter()
+
+    private init() {}
+
+    func start() {
+        try? FileManager.default.removeItem(atPath: path)
+        FileManager.default.createFile(atPath: path, contents: nil)
+        handle = FileHandle(forWritingAtPath: path)
+    }
+
+    func log(_ message: String) {
+        guard let handle = handle,
+              let data = "[\(formatter.string(from: Date()))] \(message)\n".data(using: .utf8)
+        else { return }
+        handle.write(data)
+    }
+}
+
+func debugLog(_ message: String) {
+    DebugLog.shared.log(message)
+}
+
 @main
 struct PluginArrangerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -65,6 +93,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        DebugLog.shared.start()
+        debugLog("App launched")
+
         setupMenuBar()
         setupPanel()
         setupClickMonitor()
