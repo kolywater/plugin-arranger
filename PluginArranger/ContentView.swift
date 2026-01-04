@@ -297,16 +297,18 @@ struct FlowLayout: Layout {
     }
 
     private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
-        let maxWidth = proposal.width ?? .infinity
+        let maxWidth = proposal.width ?? 780
         var positions: [CGPoint] = []
         var currentX: CGFloat = 0
         var currentY: CGFloat = 0
         var rowHeight: CGFloat = 0
+        var maxRowWidth: CGFloat = 0
 
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
 
             if currentX + size.width > maxWidth && currentX > 0 {
+                maxRowWidth = max(maxRowWidth, currentX - spacing)
                 currentX = 0
                 currentY += rowHeight + spacing
                 rowHeight = 0
@@ -317,8 +319,10 @@ struct FlowLayout: Layout {
             rowHeight = max(rowHeight, size.height)
         }
 
+        maxRowWidth = max(maxRowWidth, currentX - spacing)
         let totalHeight = currentY + rowHeight
-        return (CGSize(width: maxWidth, height: totalHeight), positions)
+        let finalWidth = proposal.width ?? max(maxRowWidth, 0)
+        return (CGSize(width: finalWidth, height: totalHeight), positions)
     }
 }
 
@@ -366,9 +370,10 @@ struct ItemButton: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .frame(height: 24)
         .background(Color.gray.opacity(0.3))
         .cornerRadius(6)
+        .focusEffectDisabled()
     }
 }
 
@@ -398,6 +403,8 @@ struct ContentView: View {
                 }
             }
 
+            Divider()
+
             // Plugin buttons
             FlowLayout(spacing: 6) {
                 ForEach(pluginManager.scanResult.plugins, id: \.self) { plugin in
@@ -422,12 +429,6 @@ struct ContentView: View {
 
             // Bottom links
             HStack(spacing: 16) {
-                Button("Refresh") {
-                    pluginManager.performScan()
-                }
-                .buttonStyle(.link)
-                .controlSize(.small)
-
                 Button("Show all") {
                     pluginManager.showAllPlugins()
                 }
@@ -448,7 +449,7 @@ struct ContentView: View {
             }
         }
         .padding()
-        .frame(width: 400)
+        .frame(minWidth: 400)
         .onAppear {
             if AXIsProcessTrusted() {
                 pluginManager.performScan()

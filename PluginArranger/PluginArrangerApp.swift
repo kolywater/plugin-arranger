@@ -31,6 +31,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var hostingView: NSHostingView<ContentView>?
     var clickMonitor: Any?
 
+    private let defaultWidth: CGFloat = 780
+    private let widthKey = "dockedWindowWidth"
+    private var isResizing = false
+
+    var storedWidth: CGFloat {
+        get {
+            let width = UserDefaults.standard.double(forKey: widthKey)
+            return width > 0 ? width : defaultWidth
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: widthKey)
+        }
+    }
+
     func resizeWindowToFit() {
         guard let hostingView = hostingView, let panel = panel, let screen = NSScreen.main else {
             return
@@ -38,31 +52,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Force layout update before getting size
         hostingView.layoutSubtreeIfNeeded()
-        let contentSize = hostingView.fittingSize
+        let fittingSize = hostingView.fittingSize
 
-        // Calculate frame size (content + title bar)
-        let titleBarHeight = panel.frame.height - panel.contentLayoutRect.height
-        let frameSize = NSSize(width: contentSize.width, height: contentSize.height + titleBarHeight)
-
-        // Calculate origin to keep at lower left
-        let fullFrame = screen.frame
-        let visibleFrame = screen.visibleFrame
-
-        // Check if dock is on the right
-        let spaceLeftOfDock = visibleFrame.maxX - fullFrame.minX
-
-        // If window fits to the left of where dock starts, use true screen bottom
-        let newY: CGFloat
-        if frameSize.width < spaceLeftOfDock {
-            newY = fullFrame.minY
-        } else {
-            newY = visibleFrame.minY
-        }
-
-        let newOrigin = NSPoint(x: visibleFrame.minX, y: newY)
-
-        // Set frame with correct size and position
-        panel.setFrame(NSRect(origin: newOrigin, size: frameSize), display: true, animate: false)
+        // Calculate frame anchored to bottom-left of screen
+        let newFrame = NSRect(
+            x: screen.visibleFrame.minX,
+            y: 0,
+            width: storedWidth,
+            height: fittingSize.height
+        )
+        panel.setFrame(newFrame, display: true)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -95,8 +94,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func setupPanel() {
         let panel = NonActivatingPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 150),
-            styleMask: [.borderless, .nonactivatingPanel],
+            contentRect: NSRect(x: 0, y: 0, width: storedWidth, height: 150),
+            styleMask: [.borderless, .resizable, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -105,31 +104,64 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false
+        panel.isMovable = false
+        panel.minSize = NSSize(width: 400, height: 50)
+
         let hostingView = NSHostingView(rootView: ContentView())
         self.hostingView = hostingView
-        let size = hostingView.fittingSize
-        panel.setContentSize(size)
         panel.contentView = hostingView
 
-        // Position at lower left corner
+        // Set initial size and position at lower left of screen
         if let screen = NSScreen.main {
-            let fullFrame = screen.frame
-            let visibleFrame = screen.visibleFrame
-            let spaceLeftOfDock = visibleFrame.maxX - fullFrame.minX
-
-            let newY: CGFloat
-            if panel.frame.width < spaceLeftOfDock {
-                newY = fullFrame.minY
-            } else {
-                newY = visibleFrame.minY
-            }
-            panel.setFrameOrigin(NSPoint(x: visibleFrame.minX, y: newY))
+            let newFrame = NSRect(
+                x: screen.visibleFrame.minX,
+                y: 0,
+                width: storedWidth,
+                height: hostingView.fittingSize.height
+            )
+            panel.setFrame(newFrame, display: false)
         }
 
         panel.orderFront(nil)
-
         self.panel = panel
+
+        // Observe resize to store width
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidResize),
+            name: NSWindow.didResizeNotification,
+            object: panel
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidEndLiveResize),
+            name: NSWindow.didEndLiveResizeNotification,
+            object: panel
+        )
+    }
+
+    @objc func windowDidResize(_ notification: Notification) {
+        guard let panel = panel, !isResizing else { return }
+        storedWidth = panel.frame.width
+
+        // Keep window anchored to bottom of screen
+        if panel.frame.origin.y != 0 {
+            isResizing = true
+            var frame = panel.frame
+            frame.origin.y = 0
+            panel.setFrame(frame, display: true)
+            isResizing = false
+        }
+    }
+
+    @objc func windowDidEndLiveResize(_ notification: Notification) {
+        guard !isResizing else { return }
+        isResizing = true
+        DispatchQueue.main.async { [weak self] in
+            self?.resizeWindowToFit()
+            self?.isResizing = false
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -226,20 +258,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if panel.isVisible {
             panel.orderOut(nil)
         } else {
-            // Recalculate position
-            if let screen = NSScreen.main {
-                let fullFrame = screen.frame
-                let visibleFrame = screen.visibleFrame
-                let spaceLeftOfDock = visibleFrame.maxX - fullFrame.minX
-
-                let newY: CGFloat
-                if panel.frame.width < spaceLeftOfDock {
-                    newY = fullFrame.minY
-                } else {
-                    newY = visibleFrame.minY
-                }
-                panel.setFrameOrigin(NSPoint(x: visibleFrame.minX, y: newY))
-            }
             panel.orderFront(nil)
             PluginManager.shared.performScan()
         }

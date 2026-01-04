@@ -17,4 +17,7 @@ xcodebuild -exportArchive \
   -exportPath Export \
   -exportOptionsPlist ExportOptions.plist
 
+echo "Copying to Dropbox..."
+cp -R Export/PluginArranger.app "/Users/aiden/Dropbox/music/aidenel songs/"
+
 echo "Done! App exported to: $PROJECT_DIR/Export/PluginArranger.app"
