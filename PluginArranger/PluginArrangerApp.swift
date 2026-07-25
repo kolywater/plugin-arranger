@@ -107,6 +107,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupPanel()
         setupClickMonitor()
 
+        // Silent check on launch — only speaks up if there's an update.
+        Task { await Updater.shared.check(userInitiated: false) }
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleResizeNotification),
@@ -261,6 +264,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let windowTitle = panel?.isVisible == true ? "Hide docked window" : "Show docked window"
         menu.addItem(NSMenuItem(title: windowTitle, action: #selector(toggleDockedWindow), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
     }
 
@@ -301,6 +305,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             panel.orderFront(nil)
             PluginManager.shared.performScan()
         }
+    }
+
+    @objc func checkForUpdates() {
+        Task { await Updater.shared.check(userInitiated: true) }
     }
 
     @objc func quit() {

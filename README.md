@@ -33,6 +33,17 @@ prompt; otherwise:
 The grant persists across app updates, because every build is signed with the
 same Developer ID certificate (see below).
 
+## Updates
+
+After that first install, the app updates itself from GitHub releases. It checks
+silently on launch and only speaks up when there's a newer version;
+**Check for Updates…** in the menu forces a check and also reports "up to date".
+
+Accepting an update downloads the release zip, verifies it's signed by team
+`N8666MD6Y8`, strips quarantine, swaps the bundle, and relaunches. The
+accessibility grant carries over — the signing identity doesn't change, so macOS
+still recognises the app.
+
 ## Usage
 
 Click the `square.stack.3d.up` icon in the menu bar:

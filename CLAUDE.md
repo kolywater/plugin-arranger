@@ -30,6 +30,7 @@ docs.
 PluginArranger/
 ├── PluginArrangerApp.swift    # @main, AppDelegate, menu bar, docked NSPanel, DebugLog
 ├── ContentView.swift          # PluginWindow, PluginManager, FlowLayout, SwiftUI panel
+├── Updater.swift              # in-app self-update from GitHub releases
 └── Assets.xcassets            # AccentColor
 PluginArrangerIcon.icon        # Icon Composer icon (Xcode 26 format)
 Justfile                       # build / reload / signing / release
@@ -59,6 +60,20 @@ just clean
 
 There is no test target. Verify changes by running the app against a live
 Ableton Live session.
+
+## Updates
+
+`Updater.swift` self-updates from GitHub releases on `kolywater/plugin-arranger`
+(public — the releases API 404s on a private repo, which is why it isn't).
+Silent check on launch, plus a "Check for Updates…" menu item.
+
+It refuses to install a bundle not signed by team `N8666MD6Y8`. That guard is
+deliberate: swapping in an ad-hoc or differently-signed build would change the
+designated requirement and cost the user their accessibility grant.
+
+Release convention the updater depends on: tag `v<version>` matching
+MARKETING_VERSION, with one `.zip` asset built by `ditto -c -k --keepParent`.
+`just release` does both.
 
 ## Code Signing — Do Not Change to Ad-Hoc
 
