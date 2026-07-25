@@ -42,6 +42,13 @@ reload configuration="Debug": (build configuration)
     set -euo pipefail
     app="{{build_root}}/Build/Products/{{configuration}}/{{app_name}}"
     pkill -x "{{scheme}}" 2>/dev/null || true
+    # The build tree inherits com.apple.quarantine from its Dropbox-synced
+    # inputs. Left in place, Gatekeeper blocks the unnotarized build and App
+    # Translocation runs it from a random read-only mount — which also breaks
+    # the TCC grant, since the path keeps changing.
+    # Delete only the quarantine attribute — `xattr -cr` clears everything and
+    # fails on the protected com.apple.macl / com.apple.provenance attributes.
+    xattr -dr com.apple.quarantine "$app" 2>/dev/null || true
     open "$app"
     echo "Launched $app"
     echo "Logs: just log"
