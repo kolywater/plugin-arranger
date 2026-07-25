@@ -3,7 +3,6 @@
 #   just reload            Build Debug, relaunch the app
 #   just log               Tail the debug log
 #   just signing           Show the signature + designated requirement
-#   just export            Build Release, copy to Dropbox
 #   just release 1.5       Bump version, build, zip, tag, publish to GitHub
 #
 # Single macOS target, so this is self-contained — no shared scripts/just
@@ -16,7 +15,6 @@ scheme := "PluginArranger"
 app_name := "PluginArranger.app"
 build_root := justfile_directory() / "build"
 debug_log := "/tmp/pluginarranger.log"
-dropbox_dir := env('HOME') / "Dropbox/music/aidenel songs"
 
 [private]
 default:
@@ -42,10 +40,9 @@ reload configuration="Debug": (build configuration)
     set -euo pipefail
     app="{{build_root}}/Build/Products/{{configuration}}/{{app_name}}"
     pkill -x "{{scheme}}" 2>/dev/null || true
-    # The build tree inherits com.apple.quarantine from its Dropbox-synced
-    # inputs. Left in place, Gatekeeper blocks the unnotarized build and App
-    # Translocation runs it from a random read-only mount — which also breaks
-    # the TCC grant, since the path keeps changing.
+    # The build tree inherits com.apple.quarantine from its inputs. Left in
+    # place, Gatekeeper blocks the unnotarized build and App Translocation runs
+    # it from a random read-only mount instead of this path.
     # Delete only the quarantine attribute — `xattr -cr` clears everything and
     # fails on the protected com.apple.macl / com.apple.provenance attributes.
     xattr -dr com.apple.quarantine "$app" 2>/dev/null || true
@@ -58,14 +55,15 @@ reload configuration="Debug": (build configuration)
 log:
     @tail -F "{{debug_log}}"
 
-# Show how the built app is signed. The designated requirement is the thing
-# that decides whether the accessibility grant survives a rebuild: it must be
-# team-based, NOT a bare `cdhash H"..."` (that means ad-hoc, and TCC will drop
-# the grant every time the binary changes).
+# Show signature + designated requirement
 [group('build')]
 signing configuration="Debug":
     #!/usr/bin/env bash
     set -euo pipefail
+    # The designated requirement decides whether the accessibility grant
+    # survives a rebuild: it must be team-based, NOT a bare `cdhash H"..."`
+    # (that means ad-hoc, and TCC drops the grant every time the binary
+    # changes).
     app="{{build_root}}/Build/Products/{{configuration}}/{{app_name}}"
     [[ -d "$app" ]] || { echo "Not built: $app — run 'just build {{configuration}}'"; exit 1; }
     codesign -dvv "$app" 2>&1 | grep -E "Identifier|Authority|TeamIdentifier|Signature" || true
@@ -74,26 +72,12 @@ signing configuration="Debug":
     echo "--- gatekeeper ---"
     spctl -a -vvv -t exec "$app" 2>&1 || true
 
-# Build Release and copy to Dropbox
-[group('build')]
-export: (build "Release")
-    #!/usr/bin/env bash
-    set -euo pipefail
-    app="{{build_root}}/Build/Products/Release/{{app_name}}"
-    dest="{{dropbox_dir}}/{{app_name}}"
-    mkdir -p "{{dropbox_dir}}"
-    rm -rf "$dest"
-    cp -R "$app" "$dest"
-    echo "Exported: $dest"
-
 # Remove build artifacts
 [group('build')]
 clean:
     @rm -rf "{{build_root}}" && echo "Cleaned {{build_root}}"
 
-# Cut a release: bump version, build Release, zip the .app, tag, and publish
-# to GitHub so it can be downloaded on other machines.
-#   just release 1.5
+# Bump version, build Release, zip, tag, publish to GitHub (just release 1.5)
 [group('build')]
 release version:
     #!/usr/bin/env bash

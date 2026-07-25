@@ -57,7 +57,6 @@ Requires [`just`](https://github.com/casey/just) and Xcode 26+.
 just reload          # build Debug, relaunch
 just log             # tail the debug log
 just signing         # show signature + designated requirement
-just export          # build Release, copy to Dropbox
 just release 1.5     # bump version, build, zip, tag, publish to GitHub
 just clean
 ```

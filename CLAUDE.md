@@ -32,7 +32,7 @@ PluginArranger/
 ├── ContentView.swift          # PluginWindow, PluginManager, FlowLayout, SwiftUI panel
 └── Assets.xcassets            # AccentColor
 PluginArrangerIcon.icon        # Icon Composer icon (Xcode 26 format)
-Justfile                       # build / reload / export / release
+Justfile                       # build / reload / signing / release
 ```
 
 Key types (all in `ContentView.swift` unless noted):
@@ -53,7 +53,6 @@ Uses [`just`](https://github.com/casey/just); requires Xcode 26+.
 just reload          # build Debug, kill running instance, relaunch
 just log             # tail /tmp/pluginarranger.log
 just signing         # show signature + designated requirement
-just export          # build Release, copy to Dropbox
 just release 1.5     # bump version, build, zip, tag, publish to GitHub
 just clean
 ```
