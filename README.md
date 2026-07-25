@@ -9,19 +9,29 @@ Requires macOS 15 or later (runs on macOS 26).
 
 ## Install
 
-Download `PluginArranger-<version>.zip` from the
-[latest release](https://github.com/kolywater/plugin-arranger/releases/latest),
-unzip, and drag `PluginArranger.app` to `/Applications`.
+Install from the terminal:
 
-The app is Developer ID signed but **not notarized**, so macOS quarantines the
-downloaded copy and refuses the first launch. Clear it once:
+```sh
+gh release download --repo kolywater/plugin-arranger --pattern '*.zip' -O /tmp/pa.zip \
+  && ditto -x -k /tmp/pa.zip /Applications && rm /tmp/pa.zip
+```
+
+Use this rather than the browser. The app is Developer ID signed but **not
+notarized**, and `com.apple.quarantine` is applied by the *downloading app*, not
+by the file — so a browser download gets flagged and blocked ("Apple could not
+verify…"), while `gh` or `curl` never sets the attribute and the app just opens.
+
+If you already downloaded it in a browser, clear the flag once:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/PluginArranger.app
 ```
 
-(Or right-click the app → **Open** → **Open**, once.) Subsequent launches and
-in-place updates are unaffected.
+Control-clicking → **Open** no longer works as a bypass; macOS 15 removed it.
+The only in-UI route is System Settings → Privacy & Security → **Open Anyway**.
+
+Either way it's one-time per machine — [updates](#updates) strip quarantine
+themselves.
 
 ### Grant accessibility permission
 
