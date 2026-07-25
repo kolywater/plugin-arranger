@@ -15,7 +15,7 @@ extension Notification.Name {
 
 // MARK: - Data Structures
 
-class PluginWindow {
+class PluginWindow: Equatable {
     let pluginName: String
     let trackName: String
     let windowElement: AXUIElement
@@ -28,6 +28,10 @@ class PluginWindow {
         self.windowElement = windowElement
         self.originalPosition = originalPosition
         self.isHidden = isHidden
+    }
+
+    static func == (lhs: PluginWindow, rhs: PluginWindow) -> Bool {
+        lhs.pluginName == rhs.pluginName && lhs.trackName == rhs.trackName
     }
 }
 
@@ -107,7 +111,32 @@ class PluginManager: ObservableObject {
 
     @Published var scanResult: PluginScanResult = .empty
 
+    private var backgroundTimer: Timer?
+    private let scanInterval: TimeInterval = 1.0
+
     private init() {}
+
+    func startBackgroundScanning() {
+        guard backgroundTimer == nil else { return }
+        backgroundTimer = Timer.scheduledTimer(withTimeInterval: scanInterval, repeats: true) { [weak self] _ in
+            self?.backgroundScan()
+        }
+    }
+
+    func stopBackgroundScanning() {
+        backgroundTimer?.invalidate()
+        backgroundTimer = nil
+    }
+
+    private func backgroundScan() {
+        let result = scanPlugins()
+        if result.pluginWindows != scanResult.pluginWindows {
+            scanResult = result
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NotificationCenter.default.post(name: .resizeWindow, object: nil)
+            }
+        }
+    }
 
     // MARK: - Window Operations
 
@@ -189,29 +218,32 @@ class PluginManager: ObservableObject {
     // MARK: - Scanning
 
     func performScan() {
-        activateLive { [self] in
-            let result = scanPlugins()
-            guard !result.pluginWindows.isEmpty else { return }
-            scanResult = result
+        scanResult = scanPlugins()
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                NotificationCenter.default.post(name: .resizeWindow, object: nil)
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NotificationCenter.default.post(name: .resizeWindow, object: nil)
         }
     }
 
     func scanPlugins() -> PluginScanResult {
+        debugLog("Scanning... AXIsProcessTrusted: \(AXIsProcessTrusted())")
+
         guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == "Live" }) else {
+            debugLog("Live not found")
             return .empty
         }
+        debugLog("Found Live with PID: \(app.processIdentifier)")
 
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
 
         var windowsRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+        let result = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
+        guard result == .success,
               let windows = windowsRef as? [AXUIElement] else {
+            debugLog("Failed to get windows: \(result.rawValue)")
             return .empty
         }
+        debugLog("Found \(windows.count) windows")
 
         let pluginWindows: [PluginWindow] = windows.compactMap { window in
             var titleRef: CFTypeRef?
@@ -382,78 +414,83 @@ struct ItemButton: View {
 struct ContentView: View {
     @ObservedObject private var pluginManager = PluginManager.shared
 
+    private var hasPlugins: Bool {
+        !pluginManager.scanResult.pluginWindows.isEmpty
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Track buttons
-            FlowLayout(spacing: 6) {
-                ForEach(pluginManager.scanResult.tracks, id: \.self) { track in
-                    ItemButton(
-                        label: track,
-                        onSelect: { pluginManager.focus(on: \.trackName, value: track) },
-                        isHidden: pluginManager.allHidden(matching: \.trackName, value: track),
-                        onToggleVisibility: {
-                            if pluginManager.allHidden(matching: \.trackName, value: track) {
-                                pluginManager.showWindows(matching: \.trackName, value: track)
-                            } else {
-                                pluginManager.hideWindows(matching: \.trackName, value: track)
-                            }
-                        },
-                        onClose: { pluginManager.closeWindows(matching: \.trackName, value: track) }
-                    )
+            if hasPlugins {
+                // Track buttons
+                FlowLayout(spacing: 6) {
+                    ForEach(pluginManager.scanResult.tracks, id: \.self) { track in
+                        ItemButton(
+                            label: track,
+                            onSelect: { pluginManager.focus(on: \.trackName, value: track) },
+                            isHidden: pluginManager.allHidden(matching: \.trackName, value: track),
+                            onToggleVisibility: {
+                                if pluginManager.allHidden(matching: \.trackName, value: track) {
+                                    pluginManager.showWindows(matching: \.trackName, value: track)
+                                } else {
+                                    pluginManager.hideWindows(matching: \.trackName, value: track)
+                                }
+                            },
+                            onClose: { pluginManager.closeWindows(matching: \.trackName, value: track) }
+                        )
+                    }
                 }
-            }
 
-            Divider()
+                Divider()
 
-            // Plugin buttons
-            FlowLayout(spacing: 6) {
-                ForEach(pluginManager.scanResult.plugins, id: \.self) { plugin in
-                    ItemButton(
-                        label: plugin,
-                        onSelect: {
-                            pluginManager.performScan()
-                            pluginManager.focus(on: \.pluginName, value: plugin)
-                        },
-                        isHidden: pluginManager.allHidden(matching: \.pluginName, value: plugin),
-                        onToggleVisibility: {
-                            if pluginManager.allHidden(matching: \.pluginName, value: plugin) {
-                                pluginManager.showWindows(matching: \.pluginName, value: plugin)
-                            } else {
-                                pluginManager.hideWindows(matching: \.pluginName, value: plugin)
-                            }
-                        },
-                        onClose: { pluginManager.closeWindows(matching: \.pluginName, value: plugin) }
-                    )
+                // Plugin buttons
+                FlowLayout(spacing: 6) {
+                    ForEach(pluginManager.scanResult.plugins, id: \.self) { plugin in
+                        ItemButton(
+                            label: plugin,
+                            onSelect: {
+                                pluginManager.performScan()
+                                pluginManager.focus(on: \.pluginName, value: plugin)
+                            },
+                            isHidden: pluginManager.allHidden(matching: \.pluginName, value: plugin),
+                            onToggleVisibility: {
+                                if pluginManager.allHidden(matching: \.pluginName, value: plugin) {
+                                    pluginManager.showWindows(matching: \.pluginName, value: plugin)
+                                } else {
+                                    pluginManager.hideWindows(matching: \.pluginName, value: plugin)
+                                }
+                            },
+                            onClose: { pluginManager.closeWindows(matching: \.pluginName, value: plugin) }
+                        )
+                    }
                 }
-            }
 
-            // Bottom links
-            HStack(spacing: 16) {
-                Button("Show all") {
-                    pluginManager.showAllPlugins()
-                }
-                .buttonStyle(.link)
-                .controlSize(.small)
+                // Bottom links
+                HStack(spacing: 16) {
+                    Button("Show all") {
+                        pluginManager.showAllPlugins()
+                    }
+                    .buttonStyle(.link)
+                    .controlSize(.small)
 
-                Button("Hide all") {
-                    pluginManager.hideAllPlugins()
-                }
-                .buttonStyle(.link)
-                .controlSize(.small)
+                    Button("Hide all") {
+                        pluginManager.hideAllPlugins()
+                    }
+                    .buttonStyle(.link)
+                    .controlSize(.small)
 
-                Button("Arrange") {
-                    pluginManager.fitToScreen()
+                    Button("Arrange") {
+                        pluginManager.fitToScreen()
+                    }
+                    .buttonStyle(.link)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.link)
-                .controlSize(.small)
             }
         }
         .padding()
         .frame(minWidth: 400)
         .onAppear {
-            if AXIsProcessTrusted() {
-                pluginManager.performScan()
-            }
+            pluginManager.performScan()
+            pluginManager.startBackgroundScanning()
         }
     }
 }

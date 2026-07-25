@@ -1,2 +1,2 @@
 Build and run the app:
-./run.sh
+`just reload`

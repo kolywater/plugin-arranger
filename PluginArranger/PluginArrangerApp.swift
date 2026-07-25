@@ -95,6 +95,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         DebugLog.shared.start()
         debugLog("App launched")
+        debugLog("AXIsProcessTrusted: \(AXIsProcessTrusted())")
+
+        // Prompt for accessibility permission if not granted
+        if !AXIsProcessTrusted() {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+            AXIsProcessTrustedWithOptions(options)
+        }
 
         setupMenuBar()
         setupPanel()
@@ -213,7 +220,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         // Run scan before menu opens
+        debugLog("Menu opening, scanning...")
         let result = PluginManager.shared.scanPlugins()
+        debugLog("Scan found \(result.pluginWindows.count) plugins")
         if !result.pluginWindows.isEmpty {
             PluginManager.shared.scanResult = result
         }
