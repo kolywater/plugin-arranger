@@ -13,7 +13,15 @@ Download `PluginArranger-<version>.zip` from the
 [latest release](https://github.com/kolywater/plugin-arranger/releases/latest),
 unzip, and drag `PluginArranger.app` to `/Applications`.
 
-The app is Developer ID signed, so it opens without a Gatekeeper prompt.
+The app is Developer ID signed but **not notarized**, so macOS quarantines the
+downloaded copy and refuses the first launch. Clear it once:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/PluginArranger.app
+```
+
+(Or right-click the app → **Open** → **Open**, once.) Subsequent launches and
+in-place updates are unaffected.
 
 ### Grant accessibility permission
 
