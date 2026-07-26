@@ -100,7 +100,13 @@ extension PluginWindow {
             debugLog("show: AX rejected move for \(pluginName)/\(trackName)")
             return
         }
+        // Raise too, or a window restored on top of one that's already visible
+        // comes back underneath it — shown, but invisible. Arranging raises as
+        // it places, which is why the track buttons never hit this and
+        // "Show All" did.
+        raise()
         isHidden = false
+        debugLog("show: \(pluginName)/\(trackName) -> \(Int(original.x)),\(Int(original.y))")
     }
 
     /// Refuses to park a window whose position can't be read — without an
@@ -198,7 +204,13 @@ class PluginManager: ObservableObject {
 
     func showAllPlugins() {
         activateLive { [self] in
-            scanResult.pluginWindows.filter(\.isHidden).forEach { $0.show() }
+            let hidden = scanResult.pluginWindows.filter(\.isHidden)
+            debugLog("showAll: \(hidden.count) hidden of \(scanResult.pluginWindows.count) total")
+            hidden.forEach { $0.show() }
+            let stillHidden = scanResult.pluginWindows.filter(\.isHidden)
+            if !stillHidden.isEmpty {
+                debugLog("showAll: STILL HIDDEN \(stillHidden.map { "\($0.pluginName)/\($0.trackName)" })")
+            }
             objectWillChange.send()
         }
     }
