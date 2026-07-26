@@ -30,8 +30,14 @@ class PluginWindow: Equatable {
         self.isHidden = isHidden
     }
 
+    // Identity is the AX element, not the title: two instances of the same
+    // plugin on the same track produce identical "Plugin/Track" titles, and
+    // keying on that made them indistinguishable. Names are still compared so
+    // a rename still counts as a change for the background scan's refresh.
     static func == (lhs: PluginWindow, rhs: PluginWindow) -> Bool {
-        lhs.pluginName == rhs.pluginName && lhs.trackName == rhs.trackName
+        CFEqual(lhs.windowElement, rhs.windowElement)
+            && lhs.pluginName == rhs.pluginName
+            && lhs.trackName == rhs.trackName
     }
 }
 
@@ -48,10 +54,22 @@ extension PluginWindow {
             return position
         }
         set {
-            guard var pos = newValue else { return }
-            let positionValue = AXValueCreate(.cgPoint, &pos)!
-            AXUIElementSetAttributeValue(windowElement, kAXPositionAttribute as CFString, positionValue)
+            guard let newValue else { return }
+            setPosition(newValue)
         }
+    }
+
+    /// Move the window, reporting whether AX actually accepted it. `show`/`hide`
+    /// need this: a silently dropped write used to leave a window parked
+    /// offscreen but flagged visible, which excluded it from every later
+    /// "Show All".
+    @discardableResult
+    func setPosition(_ point: CGPoint) -> Bool {
+        var pos = point
+        guard let positionValue = AXValueCreate(.cgPoint, &pos) else { return false }
+        return AXUIElementSetAttributeValue(
+            windowElement, kAXPositionAttribute as CFString, positionValue
+        ) == .success
     }
 
     var size: CGSize? {
@@ -70,16 +88,33 @@ extension PluginWindow {
         }
     }
 
+    /// Only clear `isHidden` once the window has actually moved back, so a
+    /// failed restore stays queued for the next "Show All" instead of being
+    /// silently dropped from it.
     func show() {
-        position = originalPosition
+        guard let original = originalPosition else {
+            debugLog("show: no original position for \(pluginName)/\(trackName)")
+            return
+        }
+        guard setPosition(original) else {
+            debugLog("show: AX rejected move for \(pluginName)/\(trackName)")
+            return
+        }
         isHidden = false
     }
 
+    /// Refuses to park a window whose position can't be read — without an
+    /// original to return to, it could never be shown again.
     func hide() {
-        originalPosition = position
-        isHidden = true
+        guard let current = position else {
+            debugLog("hide: can't read position for \(pluginName)/\(trackName)")
+            return
+        }
         guard let screen = NSScreen.main else { return }
-        position = CGPoint(x: screen.frame.maxX, y: screen.frame.maxY)
+        originalPosition = current
+        if setPosition(CGPoint(x: screen.frame.maxX, y: screen.frame.maxY)) {
+            isHidden = true
+        }
     }
 
     /// Bring this window to the front within Live's window stack. Arranging
@@ -269,7 +304,10 @@ class PluginManager: ObservableObject {
             let pluginName = String(title[..<slashIndex])
             let trackName = String(title[title.index(after: slashIndex)...])
 
-            let existing = scanResult.pluginWindows.first { $0.pluginName == pluginName && $0.trackName == trackName }
+            // Match on the AX element so duplicate "Plugin/Track" titles keep
+            // their own hidden state and original position, and so state
+            // survives a track or device rename.
+            let existing = scanResult.pluginWindows.first { CFEqual($0.windowElement, window) }
             let pluginWindow = PluginWindow(
                 pluginName: pluginName,
                 trackName: trackName,
