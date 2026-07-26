@@ -114,6 +114,14 @@ class PluginManager: ObservableObject {
     private var backgroundTimer: Timer?
     private let scanInterval: TimeInterval = 1.0
 
+    /// Vertical step applied when `arrangeVisibleWindows` runs out of columns
+    /// and wraps back to the left edge, so the new pass doesn't land exactly
+    /// on top of the previous one.
+    private let wrapStep: CGFloat = 100
+    /// How many distinct offsets before the step cycles. Without this the
+    /// offset would accumulate and later passes would march off the bottom.
+    private let wrapCycle = 3
+
     private init() {}
 
     func startBackgroundScanning() {
@@ -291,17 +299,25 @@ class PluginManager: ObservableObject {
             .map { ($0, $0.size ?? CGSize(width: 400, height: 300)) }
 
         var currentX = frame.minX
-        var currentY = topY
+        var passTop = topY          // top edge of the current left-to-right pass
+        var currentY = passTop
         var columnWidth: CGFloat = 0
+        var wrapCount = 0
 
         for (window, size) in visibleWindows {
-            if currentY + size.height > bottomY && currentY > topY {
+            if currentY + size.height > bottomY && currentY > passTop {
                 currentX += columnWidth
-                currentY = topY
+                currentY = passTop
                 columnWidth = 0
+
                 if currentX + size.width > frame.maxX {
+                    // Out of columns. Start a new pass at the left edge,
+                    // stepped down so it doesn't land exactly on the previous
+                    // pass and hide it completely.
+                    wrapCount += 1
+                    passTop = topY + wrapStep * CGFloat((wrapCount - 1) % wrapCycle + 1)
                     currentX = frame.minX
-                    currentY = topY
+                    currentY = passTop
                 }
             }
             window.position = CGPoint(x: currentX, y: currentY)
@@ -367,45 +383,56 @@ struct ItemButton: View {
     let onToggleVisibility: () -> Void
     let onClose: () -> Void
 
+    private let height: CGFloat = 24
+    private let iconWidth: CGFloat = 24
+
+    // `.buttonStyle(.plain)` makes the hit area the rendered content, so a bare
+    // Text/Image is only clickable on the glyph itself. Padding each label out
+    // to full height and stamping a `contentShape` gives every segment a hit
+    // area covering its whole slice of the pill.
     var body: some View {
         HStack(spacing: 0) {
-            Button(label) {
-                onSelect()
+            Button(action: onSelect) {
+                Text(label)
+                    .font(.caption)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 5)
+                    .frame(height: height)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .font(.caption)
 
-            Text("|")
-                .foregroundColor(.secondary)
-                .font(.caption)
-                .padding(.horizontal, 3)
+            separator
 
-            Button {
-                onToggleVisibility()
-            } label: {
+            Button(action: onToggleVisibility) {
                 Image(systemName: isHidden ? "eye" : "eye.slash")
                     .foregroundColor(.primary)
+                    .frame(width: iconWidth, height: height)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            Text("|")
-                .foregroundColor(.secondary)
-                .font(.caption)
-                .padding(.horizontal, 3)
+            separator
 
-            Button {
-                onClose()
-            } label: {
+            Button(action: onClose) {
                 Image(systemName: "xmark")
                     .foregroundColor(.primary)
+                    .frame(width: iconWidth, height: height)
+                    .padding(.trailing, 3)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 24)
+        .frame(height: height)
         .background(Color.gray.opacity(0.3))
         .cornerRadius(6)
         .focusEffectDisabled()
+    }
+
+    private var separator: some View {
+        Text("|")
+            .foregroundColor(.secondary)
+            .font(.caption)
     }
 }
 
