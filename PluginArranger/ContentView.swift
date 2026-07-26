@@ -82,6 +82,13 @@ extension PluginWindow {
         position = CGPoint(x: screen.frame.maxX, y: screen.frame.maxY)
     }
 
+    /// Bring this window to the front within Live's window stack. Arranging
+    /// raises each window as it's placed, so later windows sit above earlier
+    /// ones instead of disappearing behind them.
+    func raise() {
+        AXUIElementPerformAction(windowElement, kAXRaiseAction as CFString)
+    }
+
     func close() {
         var closeButtonRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(windowElement, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
@@ -306,21 +313,32 @@ class PluginManager: ObservableObject {
 
         for (window, size) in visibleWindows {
             if currentY + size.height > bottomY && currentY > passTop {
-                currentX += columnWidth
-                currentY = passTop
-                columnWidth = 0
+                let nextX = currentX + columnWidth
 
-                if currentX + size.width > frame.maxX {
-                    // Out of columns. Start a new pass at the left edge,
-                    // stepped down so it doesn't land exactly on the previous
-                    // pass and hide it completely.
+                if nextX + size.width <= frame.maxX {
+                    // Fits cleanly in a fresh column.
+                    currentX = nextX
+                } else if frame.maxX - size.width > currentX {
+                    // Doesn't fit cleanly, but there's still unused width to
+                    // the right. Slide it flush against the right edge so it
+                    // sits fully on screen, overlapping the previous column a
+                    // little, rather than wrapping on top of the first one.
+                    currentX = frame.maxX - size.width
+                } else {
+                    // Genuinely out of room. Start a new pass at the left
+                    // edge, stepped down so it doesn't land exactly on the
+                    // previous pass and hide it completely.
                     wrapCount += 1
                     passTop = topY + wrapStep * CGFloat((wrapCount - 1) % wrapCycle + 1)
                     currentX = frame.minX
-                    currentY = passTop
                 }
+
+                currentY = passTop
+                columnWidth = 0
             }
             window.position = CGPoint(x: currentX, y: currentY)
+            // Raise as we go, so z-order follows placement order.
+            window.raise()
             currentY += size.height
             columnWidth = max(columnWidth, size.width)
         }
