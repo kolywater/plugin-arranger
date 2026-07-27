@@ -108,6 +108,18 @@ usage within that floor (`focusEffectDisabled`, `Layout`, and the no-argument
 - Log significant operations with `debugLog(_:)`.
 - Never document self-explanatory code; comment only non-obvious logic.
 
+## Arrange Is Opt-In — Don't Wire It Into Visibility
+
+`arrangeVisibleWindows()` has exactly one caller: `fitToScreen()`, behind the
+Arrange button. Every other control — track buttons, plugin buttons, Show All,
+Hide All, the eye toggles — only flips visibility and leaves positions alone,
+so windows stay wherever the user dragged them.
+
+`focus(on:value:)` used to arrange as well. That masked a real bug (restored
+windows weren't raised, so they came back underneath other windows) and made
+the track buttons behave differently from Show All. `show()` raises on its own
+now; don't re-add an arrange call to make some visibility action "look right".
+
 ## Known Gotchas
 
 - **AX calls fail silently without permission.** Always check

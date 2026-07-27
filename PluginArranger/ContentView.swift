@@ -257,6 +257,10 @@ class PluginManager: ObservableObject {
         }
     }
 
+    /// Show only the windows matching `value`, hiding the rest. Purely a
+    /// visibility toggle — it deliberately does not reposition anything.
+    /// Arranging is the Arrange button's job alone, so windows stay wherever
+    /// they were put.
     func focus(on keyPath: KeyPath<PluginWindow, String>, value: String) {
         activateLive { [self] in
             scanResult.pluginWindows.forEach { window in
@@ -266,7 +270,6 @@ class PluginManager: ObservableObject {
                     if !window.isHidden { window.hide() }
                 }
             }
-            arrangeVisibleWindows()
             objectWillChange.send()
         }
     }
